@@ -106,6 +106,43 @@ then run the following step:
 vagrant up
 ```
 
+### OpenStack HA Deployment
+
+This repository includes a pre-configured OpenStack HA setup for deploying a highly available Kubernetes cluster with the following specifications:
+
+- **Kubespray Version**: v2.26.0 (supports Kubernetes 1.30.x)
+- **Kubernetes Version**: v1.30.8
+- **Network Plugin**: Cilium
+- **Topology**: 3 master nodes + 3 worker nodes
+
+#### Quick Deploy OpenStack HA Cluster
+
+```ShellSession
+# Clone this repository and checkout the appropriate version
+git clone <repository-url>
+cd kubespray
+git checkout v2.26.0
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Update inventory with your OpenStack instances
+# Edit inventory/openstack-ha/inventory.ini with your actual IP addresses
+vim inventory/openstack-ha/inventory.ini
+
+# Deploy the cluster
+ansible-playbook -i inventory/openstack-ha/inventory.ini --become --become-user=root cluster.yml
+```
+
+#### Configuration Details
+
+- **Inventory**: `inventory/openstack-ha/inventory.ini`
+- **Kubernetes Version**: v1.30.8 (configurable in `inventory/openstack-ha/group_vars/k8s_cluster/k8s-cluster.yml`)
+- **Network Plugin**: Cilium with eBPF capabilities
+- **High Availability**: 3 control plane nodes with stacked etcd
+
+For detailed OpenStack configuration options, see [OpenStack documentation](docs/cloud_providers/openstack.md).
+
 ## Documents
 
 - [Requirements](#requirements)
