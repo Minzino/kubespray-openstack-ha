@@ -33,7 +33,8 @@ kube_cert_group: kube-cert
 kube_log_level: 2
 
 # Kubernetes version override - use specific 1.30.8 version
-kube_version: v1.30.8
+# Note: Use the same format as kubespray defaults to avoid version comparison issues
+kube_version: "1.30.8"
 
 # Choose network plugin (cilium, calico, flannel, weave or canal)
 # Can also be set to 'cloud', which lets the cloud provider setup appropriate routing
