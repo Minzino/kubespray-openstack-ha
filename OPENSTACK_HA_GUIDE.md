@@ -1,113 +1,101 @@
-# OpenStack HA Kubernetes Deployment Guide
+# OpenStack HA Kubernetes 배포 가이드
 
-This guide provides step-by-step instructions for deploying a highly available Kubernetes cluster on OpenStack using Kubespray v2.26.0 with Kubernetes 1.30.8.
+OpenStack 환경에서 Kubespray v2.26.0과 Kubernetes 1.30.8을 사용하여 고가용성 Kubernetes 클러스터를 배포하는 가이드입니다.
 
-## Architecture Overview
+## 클러스터 구성
 
-### Cluster Topology
-- **3 Master Nodes**: Control plane with stacked etcd
-- **3 Worker Nodes**: Application workload nodes
-- **Network Plugin**: Cilium with eBPF capabilities
-- **Load Balancer**: External load balancer for API server access
+### 아키텍처
+- **3개 마스터 노드**: Control plane + stacked etcd
+- **3개 워커 노드**: 애플리케이션 워크로드 노드  
+- **네트워크 플러그인**: Cilium (eBPF 기능 지원)
+- **고가용성**: 3개 제어 플레인 노드
 
-### Node Configuration
+### 노드 구성
 ```
-Master Nodes (Control Plane):
+마스터 노드 (Control Plane):
 ├── master1 (10.0.0.10) - etcd1, kube-apiserver, kube-controller-manager, kube-scheduler
-├── master2 (10.0.0.11) - etcd2, kube-apiserver, kube-controller-manager, kube-scheduler
+├── master2 (10.0.0.11) - etcd2, kube-apiserver, kube-controller-manager, kube-scheduler  
 └── master3 (10.0.0.12) - etcd3, kube-apiserver, kube-controller-manager, kube-scheduler
 
-Worker Nodes:
+워커 노드:
 ├── worker1 (10.0.0.20) - kubelet, kube-proxy, cilium-agent
 ├── worker2 (10.0.0.21) - kubelet, kube-proxy, cilium-agent
 └── worker3 (10.0.0.22) - kubelet, kube-proxy, cilium-agent
 ```
 
-## Prerequisites
+## 사전 준비사항
 
-### OpenStack Infrastructure
-1. **OpenStack Environment**: Working OpenStack deployment with:
+### OpenStack 인프라
+1. **OpenStack 환경** 구성 요소:
    - Nova (Compute)
-   - Neutron (Networking)
-   - Cinder (Block Storage) - optional
-   - Heat (Orchestration) - optional
+   - Neutron (Networking) 
+   - Cinder (Block Storage) - 선택사항
+   - Heat (Orchestration) - 선택사항
 
-2. **VM Instances**: 6 Ubuntu 20.04/22.04 instances with:
-   - **Master nodes**: 4 vCPU, 8GB RAM, 50GB disk
-   - **Worker nodes**: 2 vCPU, 4GB RAM, 50GB disk
-   - SSH access configured
-   - Security groups allowing required ports
+2. **VM 인스턴스** 사양:
+   - **마스터 노드**: 4 vCPU, 8GB RAM, 50GB 디스크
+   - **워커 노드**: 2 vCPU, 4GB RAM, 50GB 디스크
+   - SSH 접속 설정 완료
+   - 보안 그룹에서 필요한 포트 허용
 
-3. **Network Configuration**:
-   - Private network with subnet (e.g., 10.0.0.0/24)
-   - Router with external gateway
-   - Floating IPs for external access (optional)
+3. **네트워크 설정**:
+   - 사설 네트워크 및 서브넷 (예: 10.0.0.0/24)
+   - 외부 게이트웨이가 연결된 라우터
+   - Floating IP (선택사항)
 
-### Required Ports
+### 필요 포트
 ```
-Master Nodes:
+마스터 노드:
 - 6443/tcp  - Kubernetes API server
 - 2379-2380/tcp - etcd server client API
 - 10250/tcp - Kubelet API
-- 10251/tcp - kube-scheduler
-- 10252/tcp - kube-controller-manager
 
-Worker Nodes:
-- 10250/tcp - Kubelet API
+워커 노드:
+- 10250/tcp - Kubelet API  
 - 30000-32767/tcp - NodePort Services
 
-All Nodes:
+모든 노드:
 - 22/tcp - SSH
 - 179/tcp - BGP (Cilium)
 - 4789/udp - VXLAN (Cilium)
-- 51871/udp - WireGuard (Cilium encryption)
 ```
 
-### Local Environment
-- **Ansible Control Node**: Linux/macOS machine with:
-  - Python 3.8+
-  - Ansible 2.14+
-  - SSH access to all cluster nodes
+## 1단계: OpenStack 인스턴스 준비
 
-## Step 1: Prepare OpenStack Instances
-
-### Create Security Group
+### 보안 그룹 생성
 ```bash
-# Create security group for Kubernetes cluster
+# Kubernetes 클러스터용 보안 그룹 생성
 openstack security group create k8s-cluster
 
-# Allow SSH
+# SSH 허용
 openstack security group rule create --protocol tcp --dst-port 22 k8s-cluster
 
-# Allow Kubernetes API
+# Kubernetes API 허용
 openstack security group rule create --protocol tcp --dst-port 6443 k8s-cluster
 
-# Allow etcd
+# etcd 허용  
 openstack security group rule create --protocol tcp --dst-port 2379:2380 k8s-cluster
 
-# Allow Kubelet
+# Kubelet 허용
 openstack security group rule create --protocol tcp --dst-port 10250 k8s-cluster
 
-# Allow NodePorts
+# NodePorts 허용
 openstack security group rule create --protocol tcp --dst-port 30000:32767 k8s-cluster
 
-# Allow Cilium BGP
+# Cilium BGP 허용
 openstack security group rule create --protocol tcp --dst-port 179 k8s-cluster
 
-# Allow Cilium VXLAN
+# Cilium VXLAN 허용
 openstack security group rule create --protocol udp --dst-port 4789 k8s-cluster
 
-# Allow WireGuard (Cilium encryption)
-openstack security group rule create --protocol udp --dst-port 51871 k8s-cluster
-
-# Allow internal communication
+# 내부 통신 허용
 openstack security group rule create --protocol icmp k8s-cluster
 openstack security group rule create --remote-group k8s-cluster k8s-cluster
 ```
 
-### Launch Instances
+### 인스턴스 생성
 ```bash
-# Create master nodes
+# 마스터 노드 생성
 for i in {1..3}; do
   openstack server create \
     --flavor m1.large \
@@ -118,7 +106,7 @@ for i in {1..3}; do
     master${i}
 done
 
-# Create worker nodes
+# 워커 노드 생성
 for i in {1..3}; do
   openstack server create \
     --flavor m1.medium \
@@ -130,31 +118,31 @@ for i in {1..3}; do
 done
 ```
 
-## Step 2: Prepare Kubespray
+## 2단계: Kubespray 준비
 
-### Clone and Setup
+### 클론 및 설정
 ```bash
-# Clone this repository
+# 이 저장소 클론
 git clone <repository-url>
 cd kubespray
 
-# Checkout Kubernetes 1.30 compatible version
+# Kubernetes 1.30 호환 버전으로 체크아웃
 git checkout v2.26.0
 
-# Install Python dependencies
+# Python 의존성 설치
 pip install -r requirements.txt
 ```
 
-### Configure Inventory
+### 인벤토리 설정
 ```bash
-# Copy the pre-configured OpenStack HA inventory
+# 사전 구성된 OpenStack HA 인벤토리 복사
 cp -r inventory/openstack-ha inventory/my-openstack-cluster
 
-# Update with your actual IP addresses
+# 실제 IP 주소로 업데이트
 vim inventory/my-openstack-cluster/inventory.ini
 ```
 
-Update the IP addresses in the inventory file:
+인벤토리 파일에서 IP 주소 업데이트:
 ```ini
 [all]
 master1 ansible_host=<MASTER1_IP> ip=<MASTER1_IP> etcd_member_name=etcd1
@@ -165,154 +153,90 @@ worker2 ansible_host=<WORKER2_IP> ip=<WORKER2_IP>
 worker3 ansible_host=<WORKER3_IP> ip=<WORKER3_IP>
 ```
 
-## Step 3: Deploy Kubernetes Cluster
+## 3단계: Kubernetes 클러스터 배포
 
-### Pre-deployment Checks
+### 배포 전 점검
 ```bash
-# Test connectivity to all nodes
+# 모든 노드 연결 테스트
 ansible -i inventory/my-openstack-cluster/inventory.ini all -m ping
 
-# Check available disk space (ensure >50GB on each node)
+# 디스크 공간 확인 (각 노드 50GB 이상 필요)
 ansible -i inventory/my-openstack-cluster/inventory.ini all -m shell -a "df -h /"
 ```
 
-### Deploy Cluster
+### 클러스터 배포
 ```bash
-# Deploy the cluster (this takes 15-30 minutes)
+# 클러스터 배포 (15-30분 소요)
 ansible-playbook -i inventory/my-openstack-cluster/inventory.ini \
   --become --become-user=root \
   cluster.yml
 ```
 
-### Verify Deployment
+### 배포 확인
 ```bash
-# SSH to first master node
+# 첫 번째 마스터 노드에 SSH 접속
 ssh ubuntu@<MASTER1_IP>
 
-# Check cluster status
+# 클러스터 상태 확인
 sudo kubectl get nodes
 sudo kubectl get pods --all-namespaces
 
-# Verify Cilium is running
+# Cilium 실행 확인
 sudo kubectl get pods -n kube-system -l k8s-app=cilium
 ```
 
-## Step 4: Access the Cluster
+## 4단계: 클러스터 접근
 
-### Setup kubectl Access
+### kubectl 접근 설정
 ```bash
-# Copy kubeconfig from master node
+# 마스터 노드에서 kubeconfig 복사
 scp ubuntu@<MASTER1_IP>:~/.kube/config ~/.kube/config-openstack-ha
 
-# Set KUBECONFIG environment variable
+# KUBECONFIG 환경변수 설정
 export KUBECONFIG=~/.kube/config-openstack-ha
 
-# Test access
+# 접근 테스트
 kubectl get nodes
 kubectl cluster-info
 ```
 
-### Setup Load Balancer (Optional)
-For production use, configure an external load balancer in front of the API servers:
+## 문제해결
 
-```bash
-# Example using OpenStack Octavia
-openstack loadbalancer create --name k8s-api-lb --vip-subnet-id <subnet-id>
-openstack loadbalancer listener create --name k8s-api-listener --protocol TCP --protocol-port 6443 k8s-api-lb
-openstack loadbalancer pool create --name k8s-api-pool --lb-algorithm ROUND_ROBIN --listener k8s-api-listener --protocol TCP
-openstack loadbalancer member create --subnet-id <subnet-id> --address <MASTER1_IP> --protocol-port 6443 k8s-api-pool
-openstack loadbalancer member create --subnet-id <subnet-id> --address <MASTER2_IP> --protocol-port 6443 k8s-api-pool
-openstack loadbalancer member create --subnet-id <subnet-id> --address <MASTER3_IP> --protocol-port 6443 k8s-api-pool
-```
+### 일반적인 문제
 
-## Troubleshooting
-
-### Common Issues
-
-1. **SSH Connection Failures**
+1. **SSH 연결 실패**
    ```bash
-   # Check security groups and key pairs
+   # 보안 그룹과 키 페어 확인
    openstack server show <instance-name>
-   
-   # Verify SSH key is correct
-   ssh-keygen -l -f ~/.ssh/id_rsa.pub
    ```
 
-2. **Disk Space Issues**
+2. **디스크 공간 문제**
    ```bash
-   # Check disk usage on all nodes
+   # 모든 노드의 디스크 사용량 확인
    ansible -i inventory/my-openstack-cluster/inventory.ini all -m shell -a "df -h"
-   
-   # Clean up if needed
-   ansible -i inventory/my-openstack-cluster/inventory.ini all -m shell -a "sudo apt autoremove -y"
    ```
 
-3. **Network Connectivity Issues**
+3. **네트워크 연결 문제**
    ```bash
-   # Test internal connectivity between nodes
+   # 노드 간 내부 연결 테스트
    ansible -i inventory/my-openstack-cluster/inventory.ini all -m shell -a "ping -c 3 <MASTER1_IP>"
-   
-   # Check Cilium status
-   kubectl exec -n kube-system ds/cilium -- cilium status
    ```
 
-4. **etcd Issues**
-   ```bash
-   # Check etcd cluster health on master nodes
-   sudo etcdctl --endpoints=https://127.0.0.1:2379 \
-     --cacert=/etc/ssl/etcd/ssl/ca.pem \
-     --cert=/etc/ssl/etcd/ssl/admin.pem \
-     --key=/etc/ssl/etcd/ssl/admin-key.pem \
-     endpoint health
-   ```
-
-### Reset Cluster
-If you need to start over:
+### 클러스터 초기화
+문제 발생 시 클러스터를 완전히 초기화하려면:
 ```bash
-# Reset the cluster (WARNING: This destroys everything!)
+# 클러스터 초기화 (경고: 모든 데이터가 삭제됩니다!)
 ansible-playbook -i inventory/my-openstack-cluster/inventory.ini \
   --become --become-user=root \
   reset.yml
-
-# Clean up
-ansible -i inventory/my-openstack-cluster/inventory.ini all -m shell -a "sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd"
 ```
 
-## Maintenance
+## 구성 세부사항
 
-### Adding Nodes
-```bash
-# Add node to inventory file first, then run
-ansible-playbook -i inventory/my-openstack-cluster/inventory.ini \
-  --become --become-user=root \
-  scale.yml
-```
-
-### Upgrading Cluster
-```bash
-# Update Kubernetes version in group_vars and run
-ansible-playbook -i inventory/my-openstack-cluster/inventory.ini \
-  --become --become-user=root \
-  upgrade-cluster.yml
-```
-
-### Backup etcd
-```bash
-# Create etcd backup
-ansible-playbook -i inventory/my-openstack-cluster/inventory.ini \
-  --become --become-user=root \
-  -e etcd_backup_location=/opt/etcd-backup \
-  playbooks/backup-etcd.yml
-```
-
-## Configuration Details
-
-- **Kubespray Version**: v2.26.0
-- **Kubernetes Version**: v1.30.8
-- **Container Runtime**: containerd
-- **Network Plugin**: Cilium v1.15.4
+- **Kubespray 버전**: v2.26.0
+- **Kubernetes 버전**: v1.30.8  
+- **컨테이너 런타임**: containerd
+- **네트워크 플러그인**: Cilium v1.15.4
 - **DNS**: CoreDNS
-- **Ingress**: Optional (nginx-ingress available)
-- **Storage**: Local storage (Cinder CSI plugin available)
 
-For advanced configuration options, see the files in `inventory/openstack-ha/group_vars/`.
+고급 구성 옵션은 `inventory/openstack-ha/group_vars/` 디렉토리의 파일들을 참조하세요.

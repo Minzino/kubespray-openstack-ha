@@ -106,42 +106,42 @@ then run the following step:
 vagrant up
 ```
 
-### OpenStack HA Deployment
+### OpenStack HA 배포
 
-This repository includes a pre-configured OpenStack HA setup for deploying a highly available Kubernetes cluster with the following specifications:
+이 저장소는 다음 사양의 고가용성 Kubernetes 클러스터 배포를 위한 사전 구성된 OpenStack HA 설정을 포함합니다:
 
-- **Kubespray Version**: v2.26.0 (supports Kubernetes 1.30.x)
-- **Kubernetes Version**: v1.30.8
-- **Network Plugin**: Cilium
-- **Topology**: 3 master nodes + 3 worker nodes
+- **Kubespray 버전**: v2.26.0 (Kubernetes 1.30.x 지원)
+- **Kubernetes 버전**: v1.30.8
+- **네트워크 플러그인**: Cilium
+- **토폴로지**: 3개 마스터 노드 + 3개 워커 노드
 
-#### Quick Deploy OpenStack HA Cluster
+#### OpenStack HA 클러스터 빠른 배포
 
 ```ShellSession
-# Clone this repository and checkout the appropriate version
+# 이 저장소를 클론하고 적절한 버전으로 체크아웃
 git clone <repository-url>
 cd kubespray
 git checkout v2.26.0
 
-# Install Python dependencies
+# Python 의존성 설치
 pip install -r requirements.txt
 
-# Update inventory with your OpenStack instances
-# Edit inventory/openstack-ha/inventory.ini with your actual IP addresses
+# OpenStack 인스턴스로 인벤토리 업데이트
+# inventory/openstack-ha/inventory.ini를 실제 IP 주소로 편집
 vim inventory/openstack-ha/inventory.ini
 
-# Deploy the cluster
+# 클러스터 배포
 ansible-playbook -i inventory/openstack-ha/inventory.ini --become --become-user=root cluster.yml
 ```
 
-#### Configuration Details
+#### 구성 세부사항
 
-- **Inventory**: `inventory/openstack-ha/inventory.ini`
-- **Kubernetes Version**: v1.30.8 (configurable in `inventory/openstack-ha/group_vars/k8s_cluster/k8s-cluster.yml`)
-- **Network Plugin**: Cilium with eBPF capabilities
-- **High Availability**: 3 control plane nodes with stacked etcd
+- **인벤토리**: `inventory/openstack-ha/inventory.ini`
+- **Kubernetes 버전**: v1.30.8 (`inventory/openstack-ha/group_vars/k8s_cluster/k8s-cluster.yml`에서 구성 가능)
+- **네트워크 플러그인**: eBPF 기능을 갖춘 Cilium
+- **고가용성**: stacked etcd를 갖춘 3개 제어 플레인 노드
 
-For detailed OpenStack configuration options, see [OpenStack documentation](docs/cloud_providers/openstack.md).
+상세한 OpenStack 구성 옵션은 [OpenStack 문서](docs/cloud_providers/openstack.md)를 참조하세요.
 
 ## Documents
 
