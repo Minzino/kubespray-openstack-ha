@@ -1,228 +1,94 @@
-# Deploy a Production Ready Kubernetes Cluster
+# Kubespray OpenStack HA Configuration
 
-![Kubernetes Logo](https://raw.githubusercontent.com/kubernetes-sigs/kubespray/master/docs/img/kubernetes-logo.png)
+OpenStack 환경에서 고가용성(HA) Kubernetes 클러스터를 배포하기 위한 Kubespray 설정입니다.
 
-If you have questions, check the documentation at [kubespray.io](https://kubespray.io) and join us on the [kubernetes slack](https://kubernetes.slack.com), channel **\#kubespray**.
-You can get your invite [here](http://slack.k8s.io/)
+## 프로젝트 구성
 
-- Can be deployed on **[AWS](docs/cloud_providers/aws.md), GCE, [Azure](docs/cloud_providers/azure.md), [OpenStack](docs/cloud_controllers/openstack.md), [vSphere](docs/cloud_controllers/vsphere.md), [Equinix Metal](docs/cloud_providers/equinix-metal.md) (bare metal), Oracle Cloud Infrastructure (Experimental), or Baremetal**
-- **Highly available** cluster
-- **Composable** (Choice of the network plugin for instance)
-- Supports most popular **Linux distributions**
-- **Continuous integration tests**
+### 인프라 구성
+- **총 7대 VM**: bastion(1) + master(3) + worker(3)
+- **OS**: Ubuntu 22.04 LTS  
+- **Kubernetes 버전**: 1.30.8
+- **CNI**: Cilium (Helm으로 설치)
+- **etcd**: 외부 데몬 방식 3중화
+- **HA**: VIP 기반 HAProxy 로드밸런서
 
-## Quick Start
+### 주요 기능
+✅ **고가용성**: 3개 마스터 노드 + VIP  
+✅ **Cilium CNI**: Helm 기반 설치  
+✅ **Prometheus 메트릭**: 모든 K8s 컴포넌트에서 수집 가능  
+✅ **외부 etcd**: Static Pod가 아닌 데몬 방식  
+✅ **자동 Helm 설치**: Cilium 설치를 위한 Helm 자동 구성  
 
-Below are several ways to use Kubespray to deploy a Kubernetes cluster.
+## 디렉토리 구조
 
-### Docker
-
-Ensure you have installed Docker then
-
-```ShellSession
-docker run --rm -it --mount type=bind,source="$(pwd)"/inventory/sample,dst=/inventory \
-  --mount type=bind,source="${HOME}"/.ssh/id_rsa,dst=/root/.ssh/id_rsa \
-  quay.io/kubespray/kubespray:v2.28.0 bash
-# Inside the container you may now run the kubespray playbooks:
-ansible-playbook -i /inventory/inventory.ini --private-key /root/.ssh/id_rsa cluster.yml
+```
+├── README.md                    # 이 파일
+└── inventory/
+    └── openstack-ha/
+        ├── inventory.ini        # 인벤토리 설정
+        ├── DEPLOYMENT_GUIDE.md # 상세 배포 가이드
+        └── group_vars/         # 모든 설정 변수들
+            ├── all/            # 전역 설정
+            └── k8s_cluster/    # Kubernetes 클러스터 설정
 ```
 
-### Ansible
+## 빠른 시작
 
-#### Usage
+### 1. 사전 준비
+```bash
+# OpenStack에 7대 VM 생성 (Ubuntu 22.04)
+# bastion, master1-3, worker1-3
 
-See [Getting started](/docs/getting_started/getting-started.md)
+# Kubespray 클론
+git clone https://github.com/kubernetes-sigs/kubespray.git
+cd kubespray
 
-#### Collection
-
-See [here](docs/ansible/ansible_collection.md) if you wish to use this repository as an Ansible collection
-
-### Vagrant
-
-For Vagrant we need to install Python dependencies for provisioning tasks.
-Check that ``Python`` and ``pip`` are installed:
-
-```ShellSession
-python -V && pip -V
+# 이 설정을 kubespray에 복사
+cp -r /path/to/this/repo/inventory/openstack-ha inventory/
 ```
 
-If this returns the version of the software, you're good to go. If not, download and install Python from here <https://www.python.org/downloads/source/>
+### 2. 인벤토리 수정
+`inventory/openstack-ha/inventory.ini`에서 실제 IP 주소로 수정
 
-Install Ansible according to [Ansible installation guide](/docs/ansible/ansible.md#installing-ansible)
-then run the following step:
+### 3. 배포 실행
+```bash
+# 의존성 설치
+pip install -r requirements.txt
 
-```ShellSession
-vagrant up
+# 연결 테스트
+ansible -i inventory/openstack-ha/inventory.ini all -m ping
+
+# 클러스터 배포
+ansible-playbook -i inventory/openstack-ha/inventory.ini cluster.yml
 ```
 
-## Documents
+## 주요 설정
 
-- [Requirements](#requirements)
-- [Kubespray vs ...](docs/getting_started/comparisons.md)
-- [Getting started](docs/getting_started/getting-started.md)
-- [Setting up your first cluster](docs/getting_started/setting-up-your-first-cluster.md)
-- [Ansible inventory and tags](docs/ansible/ansible.md)
-- [Integration with existing ansible repo](docs/operations/integration.md)
-- [Deployment data variables](docs/ansible/vars.md)
-- [DNS stack](docs/advanced/dns-stack.md)
-- [HA mode](docs/operations/ha-mode.md)
-- [Network plugins](#network-plugins)
-- [Vagrant install](docs/developers/vagrant.md)
-- [Flatcar Container Linux bootstrap](docs/operating_systems/flatcar.md)
-- [Fedora CoreOS bootstrap](docs/operating_systems/fcos.md)
-- [openSUSE setup](docs/operating_systems/opensuse.md)
-- [Downloaded artifacts](docs/advanced/downloads.md)
-- [Equinix Metal](docs/cloud_providers/equinix-metal.md)
-- [OpenStack](docs/cloud_controllers/openstack.md)
-- [vSphere](docs/cloud_controllers/vsphere.md)
-- [Large deployments](docs/operations/large-deployments.md)
-- [Adding/replacing a node](docs/operations/nodes.md)
-- [Upgrades basics](docs/operations/upgrades.md)
-- [Air-Gap installation](docs/operations/offline-environment.md)
-- [NTP](docs/advanced/ntp.md)
-- [Hardening](docs/operations/hardening.md)
-- [Mirror](docs/operations/mirror.md)
-- [Roadmap](docs/roadmap/roadmap.md)
+### HA 구성
+- **VIP**: 10.0.0.100
+- **로드밸런서**: HAProxy
+- **API Server 포트**: 6443
 
-## Supported Linux Distributions
+### Prometheus 메트릭 엔드포인트
+- **API Server**: `https://<master_ip>:6443/metrics`
+- **etcd**: `http://<master_ip>:2379/metrics`  
+- **Controller Manager**: `https://<master_ip>:10257/metrics`
+- **Scheduler**: `https://<master_ip>:10259/metrics`
+- **Kubelet**: `https://<node_ip>:10250/metrics`
+- **Kube-proxy**: `http://<node_ip>:10249/metrics`
 
-- **Flatcar Container Linux by Kinvolk**
-- **Debian** Bookworm, Bullseye
-- **Ubuntu** 22.04, 24.04
-- **CentOS/RHEL** [8, 9](docs/operating_systems/rhel.md#rhel-8)
-- **Fedora** 39, 40
-- **Fedora CoreOS** (see [fcos Note](docs/operating_systems/fcos.md))
-- **openSUSE** Leap 15.x/Tumbleweed
-- **Oracle Linux** [8, 9](docs/operating_systems/rhel.md#rhel-8)
-- **Alma Linux** [8, 9](docs/operating_systems/rhel.md#rhel-8)
-- **Rocky Linux** [8, 9](docs/operating_systems/rhel.md#rhel-8)
-- **Kylin Linux Advanced Server V10** (experimental: see [kylin linux notes](docs/operating_systems/kylinlinux.md))
-- **Amazon Linux 2** (experimental: see [amazon linux notes](docs/operating_systems/amazonlinux.md))
-- **UOS Linux** (experimental: see [uos linux notes](docs/operating_systems/uoslinux.md))
-- **openEuler** (experimental: see [openEuler notes](docs/operating_systems/openeuler.md))
+## 문서
 
-Note:
+- **[배포 가이드](inventory/openstack-ha/DEPLOYMENT_GUIDE.md)**: 상세한 설치 및 설정 가이드
 
-- Upstart/SysV init based OS types are not supported.
-- [Kernel requirements](docs/operations/kernel-requirements.md) (please read if the OS kernel version is < 4.19).
+## 지원
 
-## Supported Components
+이 설정은 다음 환경에서 테스트되었습니다:
+- **OS**: Ubuntu 22.04 LTS
+- **Kubernetes**: 1.30.8
+- **Kubespray**: v2.28.0
 
-<!-- BEGIN ANSIBLE MANAGED BLOCK -->
+---
 
-- Core
-  - [kubernetes](https://github.com/kubernetes/kubernetes) 1.33.2
-  - [etcd](https://github.com/etcd-io/etcd) 3.5.21
-  - [docker](https://www.docker.com/) 28.0
-  - [containerd](https://containerd.io/) 2.0.5
-  - [cri-o](http://cri-o.io/) 1.33.1 (experimental: see [CRI-O Note](docs/CRI/cri-o.md). Only on fedora, ubuntu and centos based OS)
-- Network Plugin
-  - [cni-plugins](https://github.com/containernetworking/plugins) 1.4.1
-  - [calico](https://github.com/projectcalico/calico) 3.29.4
-  - [cilium](https://github.com/cilium/cilium) 1.17.3
-  - [flannel](https://github.com/flannel-io/flannel) 0.26.7
-  - [kube-ovn](https://github.com/alauda/kube-ovn) 1.12.21
-  - [kube-router](https://github.com/cloudnativelabs/kube-router) 2.1.1
-  - [multus](https://github.com/k8snetworkplumbingwg/multus-cni) 4.1.0
-  - [kube-vip](https://github.com/kube-vip/kube-vip) 0.8.0
-- Application
-  - [cert-manager](https://github.com/jetstack/cert-manager) 1.15.3
-  - [coredns](https://github.com/coredns/coredns) 1.12.0
-  - [ingress-nginx](https://github.com/kubernetes/ingress-nginx) 1.12.1
-  - [argocd](https://argoproj.github.io/) 2.14.5
-  - [helm](https://helm.sh/) 3.16.4
-  - [metallb](https://metallb.universe.tf/) 0.13.9
-  - [registry](https://github.com/distribution/distribution) 2.8.1
-- Storage Plugin
-  - [aws-ebs-csi-plugin](https://github.com/kubernetes-sigs/aws-ebs-csi-driver) 0.5.0
-  - [azure-csi-plugin](https://github.com/kubernetes-sigs/azuredisk-csi-driver) 1.10.0
-  - [cinder-csi-plugin](https://github.com/kubernetes/cloud-provider-openstack/blob/master/docs/cinder-csi-plugin/using-cinder-csi-plugin.md) 1.30.0
-  - [gcp-pd-csi-plugin](https://github.com/kubernetes-sigs/gcp-compute-persistent-disk-csi-driver) 1.9.2
-  - [local-path-provisioner](https://github.com/rancher/local-path-provisioner) 0.0.24
-  - [local-volume-provisioner](https://github.com/kubernetes-sigs/sig-storage-local-static-provisioner) 2.5.0
-  - [node-feature-discovery](https://github.com/kubernetes-sigs/node-feature-discovery) 0.16.4
-
-<!-- END ANSIBLE MANAGED BLOCK -->
-
-## Container Runtime Notes
-
-- The cri-o version should be aligned with the respective kubernetes version (i.e. kube_version=1.20.x, crio_version=1.20)
-
-## Requirements
-
-- **Minimum required version of Kubernetes is v1.30**
-- **Ansible v2.14+, Jinja 2.11+ and python-netaddr is installed on the machine that will run Ansible commands**
-- The target servers must have **access to the Internet** in order to pull docker images. Otherwise, additional configuration is required (See [Offline Environment](docs/operations/offline-environment.md))
-- The target servers are configured to allow **IPv4 forwarding**.
-- If using IPv6 for pods and services, the target servers are configured to allow **IPv6 forwarding**.
-- The **firewalls are not managed**, you'll need to implement your own rules the way you used to.
-    in order to avoid any issue during deployment you should disable your firewall.
-- If kubespray is run from non-root user account, correct privilege escalation method
-    should be configured in the target servers. Then the `ansible_become` flag
-    or command parameters `--become or -b` should be specified.
-
-Hardware:
-These limits are safeguarded by Kubespray. Actual requirements for your workload can differ. For a sizing guide go to the [Building Large Clusters](https://kubernetes.io/docs/setup/cluster-large/#size-of-master-and-master-components) guide.
-
-- Control Plane
-  - Memory: 2 GB
-- Worker Node
-  - Memory: 1 GB
-
-## Network Plugins
-
-You can choose among ten network plugins. (default: `calico`, except Vagrant uses `flannel`)
-
-- [flannel](docs/CNI/flannel.md): gre/vxlan (layer 2) networking.
-
-- [Calico](https://docs.tigera.io/calico/latest/about/) is a networking and network policy provider. Calico supports a flexible set of networking options
-    designed to give you the most efficient networking across a range of situations, including non-overlay
-    and overlay networks, with or without BGP. Calico uses the same engine to enforce network policy for hosts,
-    pods, and (if using Istio and Envoy) applications at the service mesh layer.
-
-- [cilium](http://docs.cilium.io/en/latest/): layer 3/4 networking (as well as layer 7 to protect and secure application protocols), supports dynamic insertion of BPF bytecode into the Linux kernel to implement security services, networking and visibility logic.
-
-- [kube-ovn](docs/CNI/kube-ovn.md): Kube-OVN integrates the OVN-based Network Virtualization with Kubernetes. It offers an advanced Container Network Fabric for Enterprises.
-
-- [kube-router](docs/CNI/kube-router.md): Kube-router is a L3 CNI for Kubernetes networking aiming to provide operational
-    simplicity and high performance: it uses IPVS to provide Kube Services Proxy (if setup to replace kube-proxy),
-    iptables for network policies, and BGP for ods L3 networking (with optionally BGP peering with out-of-cluster BGP peers).
-    It can also optionally advertise routes to Kubernetes cluster Pods CIDRs, ClusterIPs, ExternalIPs and LoadBalancerIPs.
-
-- [macvlan](docs/CNI/macvlan.md): Macvlan is a Linux network driver. Pods have their own unique Mac and Ip address, connected directly the physical (layer 2) network.
-
-- [multus](docs/CNI/multus.md): Multus is a meta CNI plugin that provides multiple network interface support to pods. For each interface Multus delegates CNI calls to secondary CNI plugins such as Calico, macvlan, etc.
-
-- [custom_cni](roles/network-plugin/custom_cni/) : You can specify some manifests that will be applied to the clusters to bring you own CNI and use non-supported ones by Kubespray.
-  See `tests/files/custom_cni/README.md` and `tests/files/custom_cni/values.yaml`for an example with a CNI provided by a Helm Chart.
-
-The network plugin to use is defined by the variable `kube_network_plugin`. There is also an
-option to leverage built-in cloud provider networking instead.
-See also [Network checker](docs/advanced/netcheck.md).
-
-## Ingress Plugins
-
-- [nginx](https://kubernetes.github.io/ingress-nginx): the NGINX Ingress Controller.
-
-- [metallb](docs/ingress/metallb.md): the MetalLB bare-metal service LoadBalancer provider.
-
-## Community docs and resources
-
-- [kubernetes.io/docs/setup/production-environment/tools/kubespray/](https://kubernetes.io/docs/setup/production-environment/tools/kubespray/)
-- [kubespray, monitoring and logging](https://github.com/gregbkr/kubernetes-kargo-logging-monitoring) by @gregbkr
-- [Deploy Kubernetes w/ Ansible & Terraform](https://rsmitty.github.io/Terraform-Ansible-Kubernetes/) by @rsmitty
-- [Deploy a Kubernetes Cluster with Kubespray (video)](https://www.youtube.com/watch?v=CJ5G4GpqDy0)
-
-## Tools and projects on top of Kubespray
-
-- [Digital Rebar Provision](https://github.com/digitalrebar/provision/blob/v4/doc/integrations/ansible.rst)
-- [Terraform Contrib](https://github.com/kubernetes-sigs/kubespray/tree/master/contrib/terraform)
-- [Kubean](https://github.com/kubean-io/kubean)
-
-## CI Tests
-
-[![Build graphs](https://gitlab.com/kargo-ci/kubernetes-sigs-kubespray/badges/master/pipeline.svg)](https://gitlab.com/kargo-ci/kubernetes-sigs-kubespray/-/pipelines)
-
-CI/end-to-end tests sponsored by: [CNCF](https://cncf.io), [Equinix Metal](https://metal.equinix.com/), [OVHcloud](https://www.ovhcloud.com/), [ELASTX](https://elastx.se/).
-
-See the [test matrix](docs/developers/test_cases.md) for details.
+**참고**: 이 설정은 Kubespray 공식 프로젝트를 기반으로 한 사용자 정의 구성입니다.  
+원본 프로젝트: https://github.com/kubernetes-sigs/kubespray

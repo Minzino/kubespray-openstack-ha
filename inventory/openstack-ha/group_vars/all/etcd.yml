@@ -1,0 +1,26 @@
+---
+## Directory where etcd data stored
+etcd_data_dir: /var/lib/etcd
+
+## Container runtime
+## docker for docker, crio for cri-o and containerd for containerd.
+## Additionally you can set this to kubeadm if you want to install etcd using kubeadm
+## Kubeadm etcd deployment is experimental and only available for new deployments
+## If this is not set, container manager will be inherited from the Kubespray defaults
+## and not from k8s_cluster/k8s-cluster.yml, which might not be what you want.
+## Also this makes possible to use different container manager for etcd nodes.
+# container_manager: containerd
+
+## Settings for etcd deployment type
+# Set this to host for daemon/service deployment (not static pod)
+# This provides better HA and monitoring capabilities
+etcd_deployment_type: host
+
+## etcd cluster configuration for HA
+etcd_listen_client_urls: "http://0.0.0.0:2379,https://0.0.0.0:2379"
+etcd_listen_peer_urls: "https://0.0.0.0:2380"
+etcd_advertise_client_urls: "https://{{ hostvars[inventory_hostname]['access_ip'] | default(hostvars[inventory_hostname]['ip'] | default(fallback_ips[inventory_hostname])) }}:2379"
+etcd_initial_advertise_peer_urls: "https://{{ hostvars[inventory_hostname]['access_ip'] | default(hostvars[inventory_hostname]['ip'] | default(fallback_ips[inventory_hostname])) }}:2380"
+
+## Enable etcd metrics for Prometheus monitoring
+etcd_metrics: basic
